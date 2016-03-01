@@ -19,7 +19,7 @@ app.use_app('pyqt4')
 
 
 def rectangle_vertice(center, height, width):
-    # Borrow from _generate_vertices in vispy/visual/rectangle.py
+    # Borrow from _generate_vertices in vispy/visuals/rectangle.py
 
     half_height = height / 2.
     half_width = width / 2.
@@ -51,7 +51,8 @@ def rectangle_vertice(center, height, width):
     corner4[:, 1] = center[1] + bias2[3]
     corner4[:, 2] = 0
 
-    output = np.concatenate(([[center[0], center[1], 0.]],
+    # Get vertices between each corner of the rectangle for border drawing
+    vertices = np.concatenate(([[center[0], center[1], 0.]],
                              [[center[0] - half_width, center[1], 0.]],
                              corner1,
                              [[center[0], center[1] - half_height, 0.]],
@@ -62,7 +63,7 @@ def rectangle_vertice(center, height, width):
                              corner4,
                              [[center[0] - half_width, center[1], 0.]]))
 
-    vertices = np.array(output, dtype=np.float32)
+    # vertices = np.array(output, dtype=np.float32)
     return vertices[1:, ..., :2]
 
 
