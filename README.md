@@ -17,10 +17,10 @@ or run the widget scripy with
 `python selection_widget.py`
 
 There are four selection modes switched with key press:
-'1' stands for free lasso selection;
-'2' stands for rectangle shape selection;
-'3' stands for ellipse shape selection;
-'4' stands for picking (not available for `volume selection` yet)
+* '1' stands for free lasso selection;
+* '2' stands for rectangle shape selection;
+* '3' stands for ellipse shape selection;
+* '4' stands for picking (not available for `volume selection` yet)
 
 While under selection mode, the mouse operation for controlling the viewport is not available, users could press one of above key press to swith between selection & view mode.
 
