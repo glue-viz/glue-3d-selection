@@ -20,18 +20,14 @@ def cyfill(unsigned char[:, ::1] data, tuple start_coords,
     None, ``data`` is modified inplace.
     """
     cdef:
-        Py_ssize_t x, y, z, xsize, ysize, zsize, orig_value
-        float thres, orig_value_float
+        Py_ssize_t x, y, xsize, ysize, orig_value
+        float thres
         set stack
     
     xsize = data.shape[0]
     ysize = data.shape[1]
-    zsize = data.shape[2]
-    
-    orig_value_float = data[start_coords[0], start_coords[1], start_coords[2]]
-    orig_value = int(orig_value_float)
-
-    # this threshold should combine the relation between dragging distance and greyscale(0~255)
+    orig_value = data[start_coords[0], start_coords[1]]
+	# this threshold should combine the relation between dragging distance and greyscale(0~255)
     thres = threshold
     if fill_value == orig_value:
         raise ValueError("Filling region with same value "
@@ -41,10 +37,10 @@ def cyfill(unsigned char[:, ::1] data, tuple start_coords,
     stack = set(((start_coords[0], start_coords[1]),))
 
     while stack:
-        x, y, z = stack.pop()
-        # set the threshold as 30 here but this could be get through an input
-        if data[x, y, z]>orig_value_float/thres and data[x, y, z]<orig_value_float*thres:
-            data[x, y, z] = fill_value
+        x, y = stack.pop()
+		# set the threshold as 30 here but this could be get through an input
+        if data[x, y]>orig_value-thres and data[x, y]<orig_value+thres:
+            data[x, y] = fill_value
             if x > 0:
                 stack.add((x - 1, y))
             if x < (xsize - 1):
