@@ -2,9 +2,11 @@ __author__ = 'penny'
 
 """
     3D Points Picking & Selection tool based on Vispy library
-    Date: Feb 15, 2016
-    Usage: running the code with 'python selection_vispy_github.py'.
-           press '1' or '2' to switch between view mode and selection mode for lasso method and picking method, respectively.
+    Date: April 25, 2016
+    Usage:
+    Keypress '1': 'lasso', '2': 'rectangle', '3': 'ellipse', '4': 'pick', '5': 'floodfill'
+    Press again to switch between selection & view mode :)
+
 """
 
 import sys
@@ -19,6 +21,8 @@ from astropy.utils.data import get_pkg_data_filename
 
 from multivol import MultiVolume
 from multivol import get_translucent_cmap
+import flood_fill_3d
+import math
 
 app.use_app('pyqt4')
 
@@ -134,8 +138,7 @@ class DemoScene(QtGui.QWidget):
 
         # Data
         fitsdata = pyfits.open('l1448_13co.fits')
-        vol1 = np.nan_to_num(fitsdata[0].data)
-        self.vol_data = vol1
+        self.vol_data = np.nan_to_num(fitsdata[0].data)
 
         """
         The transpose here and after is for solving the coordinate mismatch between volume visual input data and its
@@ -144,22 +147,25 @@ class DemoScene(QtGui.QWidget):
         we see' on the screen rather than the real input data of volume.
 
         """
-        new_pos = np.transpose(vol1)
+        new_pos = np.transpose(self.vol_data)
 
         # TODO: replace the min&max threshold with real settings in Glue UI
-        min_threshold = np.min(self.vol_data)
-        max_threshold = np.max(self.vol_data)
-        self.pos_data = np.argwhere(new_pos >= min_threshold)  # get voxel positions
+        self.pos_data = np.argwhere(new_pos >= np.min(self.vol_data))  # get voxel positions
 
         grays = get_translucent_cmap(1, 1, 1)
 
-        self.volume_pool = [(vol1, (1, 6), grays)]
+        self.volume_pool = [(self.vol_data, (1, 6), grays)]
         self.volume = MultiVolume(self.volume_pool)
-        self.trans = [-vol1.shape[2]/2., -vol1.shape[1]/2., -vol1.shape[0]/2.]
+        self.trans = [-self.vol_data.shape[2]/2., -self.vol_data.shape[1]/2., -self.vol_data.shape[0]/2.]
         self.volume.transform = scene.STTransform(translate=self.trans)
         self.view.add(self.volume)
 
         self.tr = self.volume.node_transform(self.view)  # ChainTransform
+
+        # create a volume for showing the selected part
+        self.volume1 = scene.visuals.Volume(self.vol_data, clim=(4, 6), parent=self.view.scene)
+        self.volume1.transform = scene.STTransform(translate=self.trans)
+        self.volume1.visible = False
 
         # Add a text instruction
         self.text = scene.visuals.Text('', color='white', pos=(self.canvas.size[0]/4.0,  20), parent=self.canvas.scene)
@@ -173,7 +179,7 @@ class DemoScene(QtGui.QWidget):
 
         # Selection
         self.selection_flag = False
-        self.selection_pool = {'1': 'lasso', '2': 'rectangle', '3': 'ellipse', '4': 'pick'}
+        self.selection_pool = {'1': 'lasso', '2': 'rectangle', '3': 'ellipse', '4': 'pick', '5': 'floodfill'}
         self.selection_id = '1'  # default as 1
         self.selection_origin = (0, 0)
 
@@ -197,6 +203,8 @@ class DemoScene(QtGui.QWidget):
             self.view.camera._viewbox.events.mouse_wheel.connect(
                         self.view.camera.viewbox_mouse_event)
 
+#================================= Functionality Functions Start ==================================#
+
     def mark_selected(self):
         # Change the color of the selected point
         reds = get_translucent_cmap(1, 0, 0)
@@ -216,23 +224,57 @@ class DemoScene(QtGui.QWidget):
         print('self.volume_pool', len(self.volume_pool))
         self.canvas.update()
 
+    def get_max_pos(self):
+        # Ray intersection on the CPU to highlight the selected point(s)
+        data = self.tr.map(self.pos_data)[:, :2]  # Map coordinates
+        print('data after tr.map', data)
+        m1 = data > (self.selection_origin - 4)
+        m2 = data < (self.selection_origin + 4)
+        max_value = 0.
+        max_pos = None
+        pick_selected = np.argwhere(m1[:,0] & m1[:,1] & m2[:,0] & m2[:,1])
+        for item in pick_selected:
+            index = np.unravel_index(item, self.vol_data.shape)
+            if self.vol_data[index] > max_value:
+                max_value = self.vol_data[index]
+                max_pos = np.array(index).flatten()
+        print('maxpos, maxvalue', max_pos, max_value)
+        return (max_pos[0], max_pos[1], max_pos[2])  # list argument for flood_fill_3d.cyfill()
+
+    def draw_floodfill_visual(self, threhold):
+        formate_data = np.asarray(self.vol_data, np.float64)
+        pos = self.get_max_pos()
+
+        selec_vol = flood_fill_3d.cyfill(formate_data, pos, 5, threhold)  # (3d data, start pos, replaced val, thresh)
+
+        self.volume1.set_data(selec_vol)
+        self.volume1.visible = True
+        self.volume.visible = False
+
+        self.canvas.update()
+
+
+#================================= Event Functions Start ==================================#
+
     def on_key_press(self, event):
         # Set selection_flag and instruction text
 
         if event.text in self.selection_pool.keys():
             if not self.selection_flag:
-                self.text.text = 'Now is %s selection mode, press %s to switch' % (self.selection_pool[event.text], event.text)
+                self.text.text = 'Now is %s selection mode, press %s to switch' % (self.selection_pool[event.text],
+                                                                                   event.text)
                 self.selection_flag = True
             else:
                 self.text.text = 'Now is view mode, press %s to switch' % event.text
                 self.selection_flag = False
             self.event_connect(self.selection_flag)
             self.selection_id = event.text
-            self.volume.visible = True
+            # self.volume.visible = True
 
     def on_mouse_press(self, event):
-        # Realize picking functionality and set origin mouse pos
+        print('I wanna know mouse pos', event.pos)
 
+        # Realize picking functionality and set origin mouse pos
         if event.button == 1 and self.selection_flag:
             if self.selection_id == '4':
                 # Ray intersection on the CPU to highlight the selected point(s)
@@ -255,7 +297,6 @@ class DemoScene(QtGui.QWidget):
 
     def on_mouse_release(self, event):
         # Identify selected points and mark them
-
         if event.button == 1 and self.selection_flag and self.selection_id is not '4':
             data = self.tr.map(self.pos_data)[:, :2]
 
@@ -277,7 +318,6 @@ class DemoScene(QtGui.QWidget):
 
     def on_mouse_move(self, event):
         # Draw lasso/rectangle/ellipse shape with mouse dragging
-
         if event.button == 1 and event.is_dragging and self.selection_flag:
             if self.selection_id == '1':
                 self.line_pos.append(event.pos)
@@ -296,6 +336,16 @@ class DemoScene(QtGui.QWidget):
                     self.line_pos = ellipse_vertice(center, radius=(np.abs(width/2.), np.abs(height/2.)),
                                                     start_angle=0., span_angle=360., num_segments=500)
                     self.line.set_data(pos=np.array(self.line_pos), connect='strip')
+
+            if self.selection_id == '5':
+                # calculate the threshold and call draw visual
+                width = event.pos[0] - self.selection_origin[0]
+                height = event.pos[1] - self.selection_origin[1]
+                drag_distance = math.sqrt(width**2+height**2)
+                canvas_diag = math.sqrt(self.canvas.size[0]**2 + self.canvas.size[1]**2)
+                # normalize the threshold between max and min value
+                normalize = (np.max(self.vol_data) - np.min(self.vol_data))/canvas_diag
+                self.draw_floodfill_visual(drag_distance*normalize)
 
 
 if __name__ == '__main__':
