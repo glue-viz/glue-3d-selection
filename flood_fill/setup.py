@@ -3,7 +3,7 @@ from Cython.Build import cythonize
 import numpy
 
 setup(
-    ext_modules = cythonize("flood_fill_3d.pyx"),
+    ext_modules = cythonize("flood_fill.pyx"),
     include_dirs=[numpy.get_include()]
 )
 
