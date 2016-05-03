@@ -20,18 +20,17 @@ def cyfill(np.ndarray[np.float64_t, ndim=3] data, tuple start_coords, Py_ssize_t
     """
     cdef:
         Py_ssize_t x, y, z, xsize, ysize, zsize, orig_value
-        float thres 
+        float thres, orig_value_float
         set stack
     
     xsize = data.shape[0]
     ysize = data.shape[1]
     zsize = data.shape[2]
     
-    print data.shape[0]
-    print data[20, 20, 20]
-    orig_value = int(data[start_coords[0], start_coords[1], start_coords[2]])
-    # orig_value = data[20, 20, 20]
-	# this threshold should combine the relation between dragging distance and greyscale(0~255)
+    orig_value_float = data[start_coords[0], start_coords[1], start_coords[2]]
+    orig_value = int(orig_value_float)
+
+    # this threshold should combine the relation between dragging distance and greyscale(0~255)
     thres = threshold
     if fill_value == orig_value:
         raise ValueError("Filling region with same value "
@@ -42,8 +41,8 @@ def cyfill(np.ndarray[np.float64_t, ndim=3] data, tuple start_coords, Py_ssize_t
 
     while stack:
         x, y, z = stack.pop()
-		# set the threshold as 30 here but this could be get through an input
-        if data[x, y, z]>orig_value-thres and data[x, y, z]<orig_value+thres:
+        # set the threshold as 30 here but this could be get through an input
+        if data[x, y, z]>orig_value_float/thres and data[x, y, z]<orig_value_float*thres:
             data[x, y, z] = fill_value
             if x > 0:
                 stack.add((x - 1, y, z))
