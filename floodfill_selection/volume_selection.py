@@ -15,13 +15,12 @@ import numpy as np
 from PyQt4 import QtGui, QtCore
 from vispy import app, scene
 from matplotlib import path
-import pyfits
 from astropy.io import fits
 from astropy.utils.data import get_pkg_data_filename
 
 from multivol import MultiVolume
 from multivol import get_translucent_cmap
-import flood_fill_3d
+from floodfill_scipy import floodfill_scipy
 import math
 
 app.use_app('pyqt4')
@@ -134,10 +133,10 @@ class DemoScene(QtGui.QWidget):
 
         # Camera
         self.view = self.canvas.central_widget.add_view()
-        self.view.camera = scene.cameras.TurntableCamera(elevation = 25, azimuth=20, distance = 2.0, center=(0,0,0))
+        self.view.camera = scene.cameras.TurntableCamera(elevation = 90, azimuth=0, fov=60, center=(0,0,0))
 
         # Data
-        fitsdata = pyfits.open('l1448_13co.fits')
+        fitsdata = fits.open('l1448_13co.fits')
         self.vol_data = np.nan_to_num(fitsdata[0].data)
 
         """
@@ -150,7 +149,7 @@ class DemoScene(QtGui.QWidget):
         new_pos = np.transpose(self.vol_data)
 
         # TODO: replace the min&max threshold with real settings in Glue UI
-        self.pos_data = np.argwhere(new_pos >= np.min(self.vol_data))  # get voxel positions
+        self.pos_data = np.indices(self.vol_data.shape).reshape(3,-1).transpose()
 
         grays = get_translucent_cmap(1, 1, 1)
 
@@ -160,7 +159,7 @@ class DemoScene(QtGui.QWidget):
         self.volume.transform = scene.STTransform(translate=self.trans)
         self.view.add(self.volume)
 
-        self.tr = self.volume.node_transform(self.view)  # ChainTransform
+        self.tr = self.volume.get_transform(map_from='visual', map_to='canvas')
 
         # create a volume for showing the selected part
         self.volume1 = scene.visuals.Volume(self.vol_data, clim=(4, 6), parent=self.view.scene)
@@ -182,6 +181,11 @@ class DemoScene(QtGui.QWidget):
         self.selection_pool = {'1': 'lasso', '2': 'rectangle', '3': 'ellipse', '4': 'pick', '5': 'floodfill'}
         self.selection_id = '1'  # default as 1
         self.selection_origin = (0, 0)
+
+    def transform(self, data):
+        data = self.tr.map(data)
+        data /= data[:, 3:]  # normalize with homogeneous coordinates
+        return data[:, :2]
 
     def event_connect(self, flag):
         if flag:
@@ -213,7 +217,7 @@ class DemoScene(QtGui.QWidget):
         not_select = np.logical_not(self.selected)
         np.place(select_data, not_select, 0)
         select_data = np.transpose(select_data)
-        
+
         print('select_data is', select_data, select_data.shape)
         maxpos = np.unravel_index(select_data.argmax(), select_data.shape)
         print('got the max pos', maxpos)
@@ -226,26 +230,29 @@ class DemoScene(QtGui.QWidget):
 
     def get_max_pos(self):
         # Ray intersection on the CPU to highlight the selected point(s)
-        data = self.tr.map(self.pos_data)[:, :2]  # Map coordinates
-        print('data after tr.map', data)
+        data = self.transform(self.pos_data)  # Map coordinates
         m1 = data > (self.selection_origin - 4)
         m2 = data < (self.selection_origin + 4)
         max_value = 0.
         max_pos = None
         pick_selected = np.argwhere(m1[:,0] & m1[:,1] & m2[:,0] & m2[:,1])
         for item in pick_selected:
-            index = np.unravel_index(item, self.vol_data.shape)
+            index = tuple(self.pos_data[item].flatten())
             if self.vol_data[index] > max_value:
                 max_value = self.vol_data[index]
-                max_pos = np.array(index).flatten()
-        print('maxpos, maxvalue', max_pos, max_value)
-        return (max_pos[0], max_pos[1], max_pos[2])  # list argument for flood_fill_3d.cyfill()
+                max_pos = index
+        return max_pos  # list argument for flood_fill_3d.cyfill()
 
-    def draw_floodfill_visual(self, threhold):
+    def draw_floodfill_visual(self, threshold):
         formate_data = np.asarray(self.vol_data, np.float64)
         pos = self.get_max_pos()
 
-        selec_vol = flood_fill_3d.cyfill(formate_data, pos, 5, threhold)  # (3d data, start pos, replaced val, thresh)
+        # Normalize the threshold so that it returns values in the range 1.01
+        # to 101 (since it can currently be between 0 and 1)
+
+        threshold = 1 + 10 ** (threshold * 4 - 2)
+
+        selec_vol = floodfill_scipy(formate_data, pos, threshold).astype(float) * 5
 
         self.volume1.set_data(selec_vol)
         self.volume1.visible = True
@@ -278,14 +285,14 @@ class DemoScene(QtGui.QWidget):
         if event.button == 1 and self.selection_flag:
             if self.selection_id == '4':
                 # Ray intersection on the CPU to highlight the selected point(s)
-                data = self.tr.map(self.pos_data)[:, :2]  # Map coordinates
+                data = self.transform(self.pos_data)  # Map coordinates
                 print('data after tr.map', data)
                 m1 = data > (event.pos - 4)
                 m2 = data < (event.pos + 4)
 
                 pick_selected = np.argwhere(m1[:,0] & m1[:,1] & m2[:,0] & m2[:,1])
                 len_mask = self.vol_data.shape[0]*self.vol_data.shape[1]*self.vol_data.shape[2]
-                
+
                 full_mask = np.zeros(len_mask)
                 full_mask[pick_selected] = True
                 self.selected = full_mask
@@ -298,7 +305,7 @@ class DemoScene(QtGui.QWidget):
     def on_mouse_release(self, event):
         # Identify selected points and mark them
         if event.button == 1 and self.selection_flag and self.selection_id is not '4':
-            data = self.tr.map(self.pos_data)[:, :2]
+            data = self.transform(self.pos_data)
 
             if self.selection_id in ['1', '2', '3']:
                 selection_path = path.Path(self.line_pos, closed=True)
@@ -343,9 +350,7 @@ class DemoScene(QtGui.QWidget):
                 height = event.pos[1] - self.selection_origin[1]
                 drag_distance = math.sqrt(width**2+height**2)
                 canvas_diag = math.sqrt(self.canvas.size[0]**2 + self.canvas.size[1]**2)
-                # normalize the threshold between max and min value
-                normalize = (np.max(self.vol_data) - np.min(self.vol_data))/canvas_diag
-                self.draw_floodfill_visual(drag_distance*normalize)
+                self.draw_floodfill_visual(drag_distance / canvas_diag)
 
 
 if __name__ == '__main__':
