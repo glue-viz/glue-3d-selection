@@ -142,7 +142,7 @@ class DemoScene(QtGui.QWidget):
 
         if event.button == 1 and self.selection_flag:
                 pos = self.get_ray_line()
-
+                
                 # get intersected points in visual coordinate through z axis
                 inter_pos = []
 
@@ -175,7 +175,8 @@ class DemoScene(QtGui.QWidget):
 
                 # set max-value marker as different color
                 max_data_value = inter_pos[np.argmax(inter_value), :3]
-                colors[np.argmax(inter_value)] = (1, 1, 0.5, 1)
+                if len(inter_value) != 0:
+                    colors[np.argmax(inter_value)] = (1, 1, 0.5, 1)
 
                 self.markers.set_data(pos=inter_pos, face_color=colors)
 
@@ -208,16 +209,24 @@ class DemoScene(QtGui.QWidget):
         :return: Start point and end point position.
         """
         tr_back = self.volume.get_transform(map_from='canvas', map_to='visual')
+
         center_point = self.view.camera.center
         cam_point = self.view.camera.transform.map(center_point)
 
         start = np.insert(self.selection_origin, 2, 1)
         start = tr_back.map(start)
         start = start[:3] / start[3]
+        
+        line_data = np.array([start, cam_point[:3]])
+        # add a line to test the transform
+        # test_ray_line = scene.visuals.Line(line_data, color='green',
+                                           # width=10, parent=self.view.scene)
+        self.view.add(test_ray_line)
 
         return np.array([start, cam_point[:3]])
 
 if __name__ == '__main__':
+    # print(self.canvas.scene.describe_tree(with_transform=True))
     appQt = QtGui.QApplication(sys.argv)
     view = DemoScene(keys='interactive')
     view.show()
