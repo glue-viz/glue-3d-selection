@@ -271,6 +271,9 @@ class DemoScene(QtGui.QWidget):
                 self.text.text = 'Now is %s selection mode, press %s to switch' % (self.selection_pool[event.text],
                                                                                    event.text)
                 self.selection_flag = True
+                
+                self.volume.visible = True
+                self.volume1.visible = False
             else:
                 self.text.text = 'Now is view mode, press %s to switch' % event.text
                 self.selection_flag = False
